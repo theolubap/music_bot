@@ -117,19 +117,31 @@ async def play(ctx, url: str):
 
 # Função para tocar a próxima música
 async def play_next_song(ctx):
+    guild_id = ctx.guild.id
     voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    if ctx.guild.id in queue and queue[ctx.guild.id]:
-        url, title = queue[ctx.guild.id].pop(0)
-        
+
+    if guild_id in queue and queue[guild_id]:
+        url, title = queue[guild_id].pop(0)
+
+        # Baixa informações do YouTube para obter o link de áudio
+        with youtube_dl.YoutubeDL(ytdl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            audio_url = info['url']  # Obtém o link do áudio real
+
         def after_playback(error):
-            fut = asyncio.run_coroutine_threadsafe(play_next_song(ctx), bot.loop)
-            try:
-                fut.result()
-            except Exception as e:
-                print(f"Erro ao tocar próxima música: {e}")
-        
-        voice_client.play(discord.FFmpegPCMAudio(url, **ffmpeg_opts), after=after_playback)
+            if error:
+                print(f"Erro ao tocar música: {error}")
+            asyncio.run_coroutine_threadsafe(play_next_song(ctx), bot.loop)
+
+        # Toca a música com FFmpeg
+        voice_client.play(discord.FFmpegPCMAudio(audio_url, **ffmpeg_opts), after=after_playback)
+
+        # Mensagem no chat
         await ctx.send(f'Tocando agora: {title}')
+
+    else:
+        await ctx.send("Fila vazia, saindo do canal.")
+        await voice_client.disconnect()
 
 # Comando para sair do canal de voz
 @bot.command()
@@ -152,8 +164,9 @@ async def shuffle(ctx):
         await ctx.send ("Fila vazia")
 
 @bot.command ()
-async def queue(ctx):
-    guild.id = ctx.guild.id
+async def tracklist(ctx):
+    
+    guild_id = ctx.guild.id
 
     if guild_id in queue and queue[guild_id]:
         fila = [title for _, title in queue[guild_id]]  # armazena títulos das músicas
@@ -163,6 +176,73 @@ async def queue(ctx):
         await ctx.send(mensagem)
     else:
         await ctx.send("A fila está vazia.")
+
+@bot.command()
+async def playlist(ctx, url: str):
+    try:
+        guild_id = ctx.guild.id
+        if guild_id not in queue:
+            queue[guild_id] = []
+
+        if "spotify.com/playlist" in url:
+            playlist_id = url.split('/')[-1].split('?')[0]
+            playlist = sp.playlist(playlist_id)
+            tracks = playlist['tracks']['items']
+
+            for item in tracks:
+                track = item['track']
+                nome_musica = track['name']
+                artista = track['artists'][0]['name']
+                album = track['album']['name']
+                duracao = track['duration_ms'] / 1000
+                video_url = obter_url_youtube(nome_musica, artista, album, duracao)
+                print(f"URL obtida: {video_url}")  # Debug
+                if video_url:
+                    queue[guild_id].append((video_url, nome_musica))
+            
+            print(f"Fila atual ({len(queue[guild_id])} músicas): {queue[guild_id]}")
+
+            await ctx.send(f"Playlist do Spotify adicionada! {len(tracks)} músicas foram adicionadas à fila.")
+        
+        elif "list=" in url:
+            ydl_opts = {
+                'quiet': True,
+                'format': 'bestaudio/best',
+                'extract_flat': False,
+                'playlistend': 50,
+            }
+            
+            with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                print(info)  # Verifique se a URL do áudio é válida
+            
+            if 'entries' not in info or not info['entries']:
+                await ctx.send("Não foi possível encontrar músicas nesta playlist.")
+                return
+            
+            for entry in info['entries']:
+                video_url = entry['url']
+                title = entry['title']
+                queue[guild_id].append((video_url, title))
+
+            await ctx.send(f"Playlist do YouTube adicionada! {len(info['entries'])} músicas foram adicionadas à fila.")
+
+        else:
+            await ctx.send("Forneça um link válido de playlist do Spotify ou YouTube.")
+            return
+
+        voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
+        if voice_client is None:
+            if ctx.author.voice and ctx.author.voice.channel:
+                voice_client = await ctx.author.voice.channel.connect()
+            else:
+                await ctx.send("Você precisa estar em um canal de voz para adicionar a playlist.")
+                return
+        
+        if not voice_client.is_playing():
+            await play_next_song(ctx)
+    except Exception as e:
+        await ctx.send(f'Erro ao adicionar playlist: {str(e)}')
 
 
 # Iniciar o bot
