@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import re
+import random
 
 # Carregar variáveis de ambiente
 load_dotenv()
@@ -139,6 +140,30 @@ async def leave(ctx):
         await ctx.send("Sai do canal de voz.")
     else:
         await ctx.send("Não estou em um canal de voz.")
+
+#Comando para embaralhar a lista
+@bot.command()
+async def shuffle(ctx):
+    if ctx.guild.id in queue and len (queue[ctx.guild.id]) > 1:
+        random.shuffle(queue[ctx.guild.id])
+        await ctx.send ("Fila embaralhada")
+
+    else: 
+        await ctx.send ("Fila vazia")
+
+@bot.command ()
+async def queue(ctx):
+    guild.id = ctx.guild.id
+
+    if guild_id in queue and queue[guild_id]:
+        fila = [title for _, title in queue[guild_id]]  # armazena títulos das músicas
+
+        mensagem = "**Fila atual:**\n" + "\n".join(f"{i+1}. {musica}" for i, musica in enumerate(fila))
+
+        await ctx.send(mensagem)
+    else:
+        await ctx.send("A fila está vazia.")
+
 
 # Iniciar o bot
 bot.run(token)
