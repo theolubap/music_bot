@@ -8,6 +8,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import re
 import random
+from discord import app_commands
 
 # Carregar variáveis de ambiente
 load_dotenv()
@@ -162,7 +163,7 @@ async def shuffle(ctx):
 
     else: 
         await ctx.send ("Fila vazia")
-
+#Comando para mostrar a lista
 @bot.command ()
 async def tracklist(ctx):
     
@@ -177,6 +178,7 @@ async def tracklist(ctx):
     else:
         await ctx.send("A fila está vazia.")
 
+#Comando para tocar uma playlist
 @bot.command()
 async def playlist(ctx, url: str):
     try:
@@ -243,6 +245,36 @@ async def playlist(ctx, url: str):
             await play_next_song(ctx)
     except Exception as e:
         await ctx.send(f'Erro ao adicionar playlist: {str(e)}')
+
+#Comando para tocar a proxima musica
+@bot.command()
+async def next(ctx):
+    voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
+
+    if voice_client and voice_client.is_playing():
+        voice_client.stop()  # Para a música atual, chamando after_playback automaticamente
+        await ctx.send("Tocando a próxima...")
+    else:
+        await ctx.send("Não há nenhuma música tocando no momento.")
+
+    
+music_commands = """
+*Comandos do Bot de Música*
+```!play <url> - Toca uma música  
+!playlist <url> - Toca uma playlist 
+!shuffle - Embaralha a fila de musica 
+!tracklist - Mostra a fila de musica 
+!leave - O bot sai do canal de voz ```
+"""
+
+@bot.event
+async def on_message(message):
+    # Verifica se a mensagem é apenas "!"
+    if message.content.strip() == "!":
+        await message.channel.send(music_commands)
+
+    # Para permitir que outros comandos do bot funcionem
+    await bot.process_commands(message)
 
 
 # Iniciar o bot
