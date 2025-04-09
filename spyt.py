@@ -24,6 +24,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 queue = {}
+processing_queue = {}  # Fila assíncrona para processar playlists em background
 
 # Configurações de extração de URL
 ytdl_opts = {
@@ -40,7 +41,7 @@ ytdl_opts = {
 
 ffmpeg_opts = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn',
+    'options': '-vn -af "loudnorm"',
 }
 
 # Configuração do Spotify
@@ -66,6 +67,35 @@ def obter_url_youtube(nome_musica, artista, album, duracao):
         
         video_id = resultado['entries'][0]['id']
         return f"https://www.youtube.com/watch?v={video_id}"
+
+# Função de processamento em background
+async def background_processor(guild_id):
+    while True:
+        if guild_id not in processing_queue:
+            await asyncio.sleep(1)
+            continue
+
+        try:
+            task = await processing_queue[guild_id].get()
+            track = task['track']
+            ctx = task['ctx']
+
+            nome_musica = track['name']
+            artista = track['artists'][0]['name']
+            album = track['album']['name']
+            duracao = track['duration_ms'] / 1000
+
+            video_url = await asyncio.to_thread(obter_url_youtube, nome_musica, artista, album, duracao)
+            if video_url:
+                queue[guild_id].append((video_url, nome_musica))
+                voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
+                if voice_client and not voice_client.is_playing():
+                    await play_next_song(ctx)
+
+        except Exception as e:
+            print(f"Erro no processamento da fila: {e}")
+
+        await asyncio.sleep(0)
 
 # Comando play@bot.command()
 @bot.command()
@@ -144,6 +174,8 @@ async def play_next_song(ctx):
         await ctx.send("Fila vazia, saindo do canal.")
         await voice_client.disconnect()
 
+    bot.loop.create_task(check_voice_channel(ctx))
+
 # Comando para sair do canal de voz
 @bot.command()
 async def leave(ctx):
@@ -186,63 +218,32 @@ async def playlist(ctx, url: str):
         if guild_id not in queue:
             queue[guild_id] = []
 
+        if guild_id not in processing_queue:
+            processing_queue[guild_id] = asyncio.Queue()
+            asyncio.create_task(background_processor(guild_id))
+
         if "spotify.com/playlist" in url:
             playlist_id = url.split('/')[-1].split('?')[0]
             playlist = sp.playlist(playlist_id)
-            tracks = playlist['tracks']['items']
+            tracks = playlist['tracks']['items'][:50]
 
             for item in tracks:
-                track = item['track']
-                nome_musica = track['name']
-                artista = track['artists'][0]['name']
-                album = track['album']['name']
-                duracao = track['duration_ms'] / 1000
-                video_url = obter_url_youtube(nome_musica, artista, album, duracao)
-                print(f"URL obtida: {video_url}")  # Debug
-                if video_url:
-                    queue[guild_id].append((video_url, nome_musica))
-            
-            print(f"Fila atual ({len(queue[guild_id])} músicas): {queue[guild_id]}")
+                await processing_queue[guild_id].put({'track': item['track'], 'ctx': ctx})
 
-            await ctx.send(f"Playlist do Spotify adicionada! {len(tracks)} músicas foram adicionadas à fila.")
-        
-        elif "list=" in url:
-            ydl_opts = {
-                'quiet': True,
-                'format': 'bestaudio/best',
-                'extract_flat': False,
-                'playlistend': 50,
-            }
-            
-            with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                print(info)  # Verifique se a URL do áudio é válida
-            
-            if 'entries' not in info or not info['entries']:
-                await ctx.send("Não foi possível encontrar músicas nesta playlist.")
-                return
-            
-            for entry in info['entries']:
-                video_url = entry['url']
-                title = entry['title']
-                queue[guild_id].append((video_url, title))
-
-            await ctx.send(f"Playlist do YouTube adicionada! {len(info['entries'])} músicas foram adicionadas à fila.")
+            await ctx.send(f"Playlist adicionada à fila! {len(tracks)}")
 
         else:
-            await ctx.send("Forneça um link válido de playlist do Spotify ou YouTube.")
+            await ctx.send("Forneça um link válido de playlist do Spotify.")
             return
 
         voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
         if voice_client is None:
             if ctx.author.voice and ctx.author.voice.channel:
-                voice_client = await ctx.author.voice.channel.connect()
+                await ctx.author.voice.channel.connect()
             else:
-                await ctx.send("Você precisa estar em um canal de voz para adicionar a playlist.")
+                await ctx.send("Você precisa estar em um canal de voz.")
                 return
-        
-        if not voice_client.is_playing():
-            await play_next_song(ctx)
+
     except Exception as e:
         await ctx.send(f'Erro ao adicionar playlist: {str(e)}')
 
@@ -257,7 +258,15 @@ async def next(ctx):
     else:
         await ctx.send("Não há nenhuma música tocando no momento.")
 
+#Funcao para auto desconectar
+async def check_voice_channel(ctx):
+    await asyncio.sleep(30)  # Espera 30 segundos antes de verificar
+    voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
     
+    if voice_client and len(voice_client.channel.members) == 1:  # Apenas o bot no canal
+        await voice_client.disconnect()
+        await ctx.send("Nenhum usuário no canal de voz. Desconectando...")   
+
 music_commands = """
 *Comandos do Bot de Música*
 ```!play <url> - Toca uma música  
@@ -275,7 +284,6 @@ async def on_message(message):
 
     # Para permitir que outros comandos do bot funcionem
     await bot.process_commands(message)
-
 
 # Iniciar o bot
 bot.run(token)
