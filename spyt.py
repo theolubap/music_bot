@@ -276,14 +276,6 @@ async def tracklist(ctx):
 
     await ctx.send(embed=embed, view=view)
 
-    view = Paginador()
-    conteudo = "\n".join(f"{i + 1}. {musica}" for i, musica in enumerate(paginas[0]))
-    embed = discord.Embed(
-        title=f"Fila atual (Página 1/{len(paginas)})",
-        description=conteudo,
-        color=discord.Color.blurple()
-    )
-    await ctx.send(embed=embed, view=view)
 
 #Comando para tocar uma playlist
 @bot.command()
