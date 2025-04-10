@@ -46,8 +46,8 @@ ffmpeg_opts = {
 }
 
 # Configuração do Spotify
-client_id = 'd64c7d5416894e2597bdd9fe9234c737'
-client_secret = 'a3ec92ec43fd4984a87ebe5c53323666'
+client_id = 'SPOTIFY_CLIENT_ID'
+client_secret = 'SPOTIFY_CLIENT_SECRET'
 client_credentials_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
 sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
@@ -196,21 +196,6 @@ async def shuffle(ctx):
 
     else: 
         await ctx.send ("Fila vazia")
-#Comando para mostrar a lista
-# @bot.command ()
-# async def tracklist(ctx):
-    
-#     guild_id = ctx.guild.id
-
-#     if guild_id in queue and queue[guild_id]:
-#         fila = [title for _, title in queue[guild_id]]  # armazena títulos das músicas
-
-#         mensagem = "**Fila atual:**\n" + "\n".join(f"{i+1}. {musica}" for i, musica in enumerate(fila))
-
-#         await ctx.send(mensagem)
-#     else:
-#         await ctx.send("A fila está vazia.")
-
 
 @bot.command()
 async def tracklist(ctx):
